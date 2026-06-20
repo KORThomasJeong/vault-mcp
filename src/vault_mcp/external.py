@@ -37,9 +37,13 @@ def title_search(wiki_query_bin: str | None, text: str, limit: int) -> str:
     if not wiki_query_bin:
         return "Title search is disabled (WIKI_QUERY_BIN not configured)."
     code, out, err = run([wiki_query_bin, "alias", text, "--limit", str(limit)])
+    out_s, err_s = out.strip(), err.strip()
+    # wiki-query prints "no rows" for an empty result; that is success, not failure.
+    if out_s in ("", "no rows"):
+        return "(no matches)"
     if code != 0:
-        return f"Title search failed ({code}): {err.strip() or out.strip()}"
-    return out.strip() or "(no matches)"
+        return f"Title search failed ({code}): {err_s or out_s}"
+    return out_s
 
 
 def save_url(save_link_bin: str | None, url: str, folder: str | None) -> dict:

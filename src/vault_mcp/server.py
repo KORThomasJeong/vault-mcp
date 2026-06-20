@@ -35,11 +35,38 @@ def build_server(config: Config) -> FastMCP:
 
         from .auth import AllowlistMiddleware
 
-        auth = GitHubProvider(
+        github = GitHubProvider(
             client_id=config.github_client_id,
             client_secret=config.github_client_secret,
             base_url=config.base_url,
         )
+        if config.auth_token:
+            # Accept BOTH: GitHub OAuth (Claude Desktop / claude.ai) AND a static
+            # token (Claude Code / automation). OAuth owns the discovery routes;
+            # the token is an extra verification path. The token is marked
+            # "trusted" so the allowlist middleware lets it through — holding the
+            # secret already authorizes it.
+            from fastmcp.server.auth import MultiAuth, StaticTokenVerifier
+
+            auth = MultiAuth(
+                server=github,
+                verifiers=[
+                    StaticTokenVerifier(
+                        tokens={
+                            config.auth_token: {
+                                "sub": "static-token",
+                                "client_id": "vault-mcp",
+                                "trusted": True,
+                                # Match the scope the OAuth resource requires so the
+                                # token isn't rejected with insufficient_scope.
+                                "scopes": ["user"],
+                            }
+                        }
+                    )
+                ],
+            )
+        else:
+            auth = github
         allowlist_mw = AllowlistMiddleware(config.github_allowed_users)
 
     mcp = FastMCP("Vault MCP", auth=auth)

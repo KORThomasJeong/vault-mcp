@@ -36,6 +36,12 @@ class AllowlistMiddleware(Middleware):
         self.allowed = allowed
 
     async def on_call_tool(self, context: MiddlewareContext, call_next):
+        token = get_access_token()
+        # A static token marked "trusted" is pre-authorized — holding the secret
+        # is the authorization. Only OAuth identities are checked against the list.
+        if token is not None and getattr(token, "claims", None):
+            if token.claims.get("trusted") is True:
+                return await call_next(context)
         ids = identities_from_token()
         if not any(i in self.allowed for i in ids):
             shown = ids or ["<no identity>"]

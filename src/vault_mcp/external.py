@@ -30,11 +30,18 @@ def semantic_search(
     query: str,
     collection: str,
     limit: int,
+    include_wiki: bool = False,
 ) -> str:
     # Prefer a warm fast-search front-end (e.g. a qa-search daemon) if configured;
     # it answers in milliseconds without loading a model per call.
     if fast_search_bin:
-        code, out, err = run([fast_search_bin, query, "-n", str(limit)])
+        argv = [fast_search_bin, query, "-n", str(limit)]
+        # By default, exclude auto-generated Wiki/ synthesis nodes (topic/entity/
+        # concept seeds) so results are real content notes rather than second-order
+        # summaries. The caller opts back in with include_wiki=True.
+        if include_wiki:
+            argv.append("--include-wiki")
+        code, out, err = run(argv)
         if code != 0:
             return f"Search failed ({code}): {err.strip() or out.strip()}"
         return out.strip() or "(no results)"

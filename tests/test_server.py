@@ -74,3 +74,12 @@ async def test_search_disabled_message(server):
     async with Client(server) as client:
         r = await client.call_tool("vault_search", {"query": "anything"})
     assert "disabled" in _payload(r).lower()
+
+
+async def test_search_accepts_include_wiki_param(server):
+    # The tool must expose include_wiki in its schema; passing it must not error.
+    async with Client(server) as client:
+        r = await client.call_tool(
+            "vault_search", {"query": "anything", "include_wiki": True}
+        )
+    assert "disabled" in _payload(r).lower()

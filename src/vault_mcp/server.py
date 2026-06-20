@@ -87,13 +87,24 @@ def build_server(config: Config) -> FastMCP:
             str, Field(description="'semantic' (hybrid vector search) or 'title' (exact title/path lookup).")
         ] = "semantic",
         limit: Annotated[int, Field(ge=1, le=50, description="Max results.")] = 8,
+        include_wiki: Annotated[
+            bool,
+            Field(
+                description="Include auto-generated Wiki/ synthesis nodes "
+                "(topic/entity/concept seeds). Default false: results are real "
+                "content notes, not second-order summaries. Set true to also "
+                "search the Wiki synthesis layer (e.g. 'Compiled Truth' entries)."
+            ),
+        ] = False,
     ) -> str:
         """Search the vault. 'semantic' for meaning-based discovery, 'title' for
-        finding a note by its name or path."""
+        finding a note by its name or path. By default, auto-generated Wiki/
+        index nodes are excluded from semantic results; pass include_wiki=true
+        to include them."""
         if mode == "title":
             return external.title_search(config.wiki_query_bin, query, limit)
         return external.semantic_search(
-            config.fast_search_bin, config.qmd_bin, query, "obsidian", limit
+            config.fast_search_bin, config.qmd_bin, query, "obsidian", limit, include_wiki
         )
 
     @mcp.tool

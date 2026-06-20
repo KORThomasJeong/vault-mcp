@@ -23,14 +23,28 @@ def build_server(config: Config) -> FastMCP:
     guard = VaultGuard(config.vault_path)
 
     auth = None
-    if config.auth_token:
+    allowlist_mw = None
+    if config.auth_mode == "token" and config.auth_token:
         from fastmcp.server.auth import StaticTokenVerifier
 
         auth = StaticTokenVerifier(
             tokens={config.auth_token: {"sub": "owner", "client_id": "vault-mcp"}}
         )
+    elif config.auth_mode == "github":
+        from fastmcp.server.auth.providers.github import GitHubProvider
+
+        from .auth import AllowlistMiddleware
+
+        auth = GitHubProvider(
+            client_id=config.github_client_id,
+            client_secret=config.github_client_secret,
+            base_url=config.base_url,
+        )
+        allowlist_mw = AllowlistMiddleware(config.github_allowed_users)
 
     mcp = FastMCP("Vault MCP", auth=auth)
+    if allowlist_mw is not None:
+        mcp.add_middleware(allowlist_mw)
 
     @mcp.tool
     def vault_taxonomy() -> dict:

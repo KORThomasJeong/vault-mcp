@@ -33,7 +33,7 @@ claude.ai / Claude Code  ──https + Bearer token──▶  reverse proxy / TL
 - Every path is resolved and confined to the vault root — no `..` traversal, no absolute paths, no symlink escapes.
 - Writes are allowed only under `01-Inbox/`, `10-Projects/`, `20-Areas/`, `30-Resources/`, `docs/`.
 - Reads of regenerable index/map/log artifacts and legacy wiki backups are refused (they are huge and waste tokens).
-- A static **Bearer token** (`MCP_AUTH_TOKEN`) guards every request.
+- Auth is required: a static **Bearer token** or **GitHub OAuth** with a user allowlist (see [Authentication](#authentication)).
 
 ## Install
 
@@ -57,7 +57,11 @@ All config is via environment (see `.env.example`):
 | Var | Required | Default | Notes |
 |---|---|---|---|
 | `VAULT_PATH` | ✅ | — | Absolute path to the vault root. |
-| `MCP_AUTH_TOKEN` |  | (none) | Bearer token. **Set this for any internet-facing deployment.** |
+| `AUTH_MODE` |  | inferred | `token` \| `github` \| `none`. See [Authentication](#authentication). |
+| `MCP_AUTH_TOKEN` |  | (none) | Bearer token (token mode). |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` |  | (none) | GitHub OAuth app credentials (github mode). |
+| `BASE_URL` |  | (none) | Public HTTPS URL of the server (github mode). |
+| `GITHUB_ALLOWED_USERS` |  | (none) | Comma-separated GitHub logins allowed to connect. **Required in github mode.** |
 | `MCP_HOST` |  | `127.0.0.1` | Keep on localhost behind a proxy. |
 | `MCP_PORT` |  | `8848` | |
 | `MCP_PATH` |  | `/mcp` | |
@@ -78,20 +82,49 @@ uv run vault-mcp
 # serves Streamable HTTP at http://127.0.0.1:8848/mcp
 ```
 
-Expose it through your existing reverse proxy (Caddy/nginx/Cloudflare) so that
-`https://your-domain:port/mcp` forwards to `127.0.0.1:8848`.
+Expose it through your existing reverse proxy (nginx / Nginx Proxy Manager /
+Caddy / Cloudflare) so that `https://your-host/mcp` forwards to `127.0.0.1:8848`.
+Enable WebSocket/streaming pass-through and disable response buffering so SSE
+works (for nginx: `proxy_buffering off;`, a long `proxy_read_timeout`).
+
+## Authentication
+
+| Mode | How clients authenticate | Works with |
+|---|---|---|
+| `token` | `Authorization: Bearer <token>` header | Claude Code (`--header`). **Not** the Claude Desktop / claude.ai custom-connector UI (no header field). |
+| `github` | GitHub OAuth (browser), restricted to `GITHUB_ALLOWED_USERS` | Claude Desktop / claude.ai remote connectors, Claude Code. |
+| `none` | nothing | trusted/private networks only. |
+
+> **OAuth authenticates, the allowlist authorizes.** In `github` mode the server
+> refuses to start unless `GITHUB_ALLOWED_USERS` is set — otherwise *any* GitHub
+> account could connect, which is more open than a token.
+
+### Set up GitHub OAuth (github mode)
+
+1. Register an OAuth App at <https://github.com/settings/developers> → **New OAuth App**:
+   - **Homepage URL**: `https://your-host`
+   - **Authorization callback URL**: `https://your-host/auth/callback`
+2. Copy the **Client ID**, generate a **Client secret**, and put them plus
+   `BASE_URL=https://your-host`, `AUTH_MODE=github`, and
+   `GITHUB_ALLOWED_USERS=<your-login>` in `.env`.
+3. Restart the server.
 
 ### Connect from Claude Code
 
 ```bash
-claude mcp add --transport http vault https://your-domain:port/mcp \
+# token mode
+claude mcp add --transport http vault https://your-host/mcp \
   --header "Authorization: Bearer <your-token>"
+
+# github mode (OAuth — opens a browser)
+claude mcp add --transport http vault https://your-host/mcp
 ```
 
-### Connect from claude.ai
+### Connect from Claude Desktop / claude.ai
 
-Add a custom connector pointing at `https://your-domain:port/mcp` with the
-`Authorization: Bearer <token>` header. (claude.ai requires HTTPS.)
+Settings → Connectors → add a custom connector pointing at `https://your-host/mcp`.
+Use **github mode** — the desktop/web connector UI authenticates via OAuth and
+has no field for a static Bearer token.
 
 ## Develop
 

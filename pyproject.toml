@@ -1,6 +1,6 @@
 [project]
 name = "vault-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Remote MCP server to search, read, and write an Obsidian (PARA) vault — the calling LLM picks the folder."
 readme = "README.md"
 requires-python = ">=3.10"

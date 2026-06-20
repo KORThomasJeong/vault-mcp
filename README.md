@@ -11,12 +11,15 @@ model calls `vault_taxonomy` to see your folder structure, picks the right
 folder itself, and calls `vault_write`.
 
 ```
-claude.ai / Claude Code  ──https + Bearer token──▶  reverse proxy / TLS
-                                                          │
-                                                  127.0.0.1:8848 (this server)
-                                                          │
-                                                  ~/Obsidian/YourVault
+Claude Desktop / claude.ai / Claude Code
+        │  HTTPS + GitHub OAuth (or Bearer token)
+        ▼
+ reverse proxy / TLS  ──►  vault-mcp (this server)  ──►  ~/Obsidian/YourVault
 ```
+
+> **Docs:** [Architecture](docs/ARCHITECTURE.md) ·
+> [Authentication](docs/AUTHENTICATION.md) ·
+> [Deployment](docs/DEPLOYMENT.md) · [Changelog](docs/CHANGELOG.md)
 
 ## Tools
 
@@ -62,7 +65,7 @@ All config is via environment (see `.env.example`):
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` |  | (none) | GitHub OAuth app credentials (github mode). |
 | `BASE_URL` |  | (none) | Public HTTPS URL of the server (github mode). |
 | `GITHUB_ALLOWED_USERS` |  | (none) | Comma-separated GitHub logins allowed to connect. **Required in github mode.** |
-| `MCP_HOST` |  | `127.0.0.1` | Keep on localhost behind a proxy. |
+| `MCP_HOST` |  | `127.0.0.1` | Use `0.0.0.0` when the proxy reaches it over the LAN (e.g. NPM in Docker), else 502. |
 | `MCP_PORT` |  | `8848` | |
 | `MCP_PATH` |  | `/mcp` | |
 | `FAST_SEARCH_BIN` |  | (none) | Warm semantic-search front-end, called `<bin> "<query>" -n <limit>`. Preferred over `QMD_BIN`. |
@@ -94,10 +97,15 @@ works (for nginx: `proxy_buffering off;`, a long `proxy_read_timeout`).
 | `token` | `Authorization: Bearer <token>` header | Claude Code (`--header`). **Not** the Claude Desktop / claude.ai custom-connector UI (no header field). |
 | `github` | GitHub OAuth (browser), restricted to `GITHUB_ALLOWED_USERS` | Claude Desktop / claude.ai remote connectors, Claude Code. |
 | `none` | nothing | trusted/private networks only. |
+| `github` + token | both at once (MultiAuth) | Desktop via OAuth **and** CLI/automation via token, one server. |
 
 > **OAuth authenticates, the allowlist authorizes.** In `github` mode the server
 > refuses to start unless `GITHUB_ALLOWED_USERS` is set — otherwise *any* GitHub
 > account could connect, which is more open than a token.
+
+> **Both at once:** set `MCP_AUTH_TOKEN` alongside `github` mode and the server
+> accepts GitHub OAuth *and* the static token simultaneously (MultiAuth). Details
+> in [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md).
 
 ### Set up GitHub OAuth (github mode)
 

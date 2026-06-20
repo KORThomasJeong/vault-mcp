@@ -19,6 +19,7 @@ class Config:
     host: str
     port: int
     path: str
+    fast_search_bin: str | None
     qmd_bin: str | None
     wiki_query_bin: str | None
     save_link_bin: str | None
@@ -47,6 +48,7 @@ class Config:
             host=env.get("MCP_HOST", "127.0.0.1").strip() or "127.0.0.1",
             port=int(env.get("MCP_PORT", "8848").strip() or "8848"),
             path=env.get("MCP_PATH", "/mcp").strip() or "/mcp",
+            fast_search_bin=opt("FAST_SEARCH_BIN"),
             qmd_bin=opt("QMD_BIN"),
             wiki_query_bin=opt("WIKI_QUERY_BIN"),
             save_link_bin=opt("SAVE_LINK_BIN"),

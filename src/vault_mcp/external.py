@@ -24,13 +24,26 @@ def run(argv: list[str], timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str, str]
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def semantic_search(qmd_bin: str | None, query: str, collection: str, limit: int) -> str:
-    if not qmd_bin:
-        return "Semantic search is disabled (QMD_BIN not configured)."
-    code, out, err = run([qmd_bin, "query", query, "-c", collection, "-n", str(limit)])
-    if code != 0:
-        return f"Search failed ({code}): {err.strip() or out.strip()}"
-    return out.strip() or "(no results)"
+def semantic_search(
+    fast_search_bin: str | None,
+    qmd_bin: str | None,
+    query: str,
+    collection: str,
+    limit: int,
+) -> str:
+    # Prefer a warm fast-search front-end (e.g. a qa-search daemon) if configured;
+    # it answers in milliseconds without loading a model per call.
+    if fast_search_bin:
+        code, out, err = run([fast_search_bin, query, "-n", str(limit)])
+        if code != 0:
+            return f"Search failed ({code}): {err.strip() or out.strip()}"
+        return out.strip() or "(no results)"
+    if qmd_bin:
+        code, out, err = run([qmd_bin, "query", query, "-c", collection, "-n", str(limit)])
+        if code != 0:
+            return f"Search failed ({code}): {err.strip() or out.strip()}"
+        return out.strip() or "(no results)"
+    return "Semantic search is disabled (neither FAST_SEARCH_BIN nor QMD_BIN configured)."
 
 
 def title_search(wiki_query_bin: str | None, text: str, limit: int) -> str:

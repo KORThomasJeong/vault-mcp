@@ -61,7 +61,8 @@ All config is via environment (see `.env.example`):
 | `MCP_HOST` |  | `127.0.0.1` | Keep on localhost behind a proxy. |
 | `MCP_PORT` |  | `8848` | |
 | `MCP_PATH` |  | `/mcp` | |
-| `QMD_BIN` |  | `qmd` | Semantic search helper. Blank → that mode is disabled. |
+| `FAST_SEARCH_BIN` |  | (none) | Warm semantic-search front-end, called `<bin> "<query>" -n <limit>`. Preferred over `QMD_BIN`. |
+| `QMD_BIN` |  | `qmd` | Fallback semantic search helper. Blank + no `FAST_SEARCH_BIN` → that mode is disabled. |
 | `WIKI_QUERY_BIN` |  | `wiki-query` | Title/path search helper. Blank → disabled. |
 | `SAVE_LINK_BIN` |  | `obsidian-save-link` | URL→note helper. Blank → disabled. |
 | `INDEX_REBUILD_CMD` |  | (none) | Command run when a tool is called with `rebuild_index=true`. |

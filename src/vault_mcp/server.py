@@ -51,7 +51,9 @@ def build_server(config: Config) -> FastMCP:
         finding a note by its name or path."""
         if mode == "title":
             return external.title_search(config.wiki_query_bin, query, limit)
-        return external.semantic_search(config.qmd_bin, query, "obsidian", limit)
+        return external.semantic_search(
+            config.fast_search_bin, config.qmd_bin, query, "obsidian", limit
+        )
 
     @mcp.tool
     def vault_read(

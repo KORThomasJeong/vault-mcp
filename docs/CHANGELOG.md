@@ -2,6 +2,54 @@
 
 All notable changes to vault-mcp.
 
+## Unreleased
+
+### Added
+- **Transcript-done webhook** (`POST /hooks/transcript-done`): a custom HTTP
+  route on the same FastMCP process — MCP protocol and this webhook share one
+  server but are separate doors. When STT-web pushes a raw transcript into the
+  vault it fires this hook, and we run a headless `claude -p` that reads the
+  vault's own cleanup-prompt guide and synthesises the Meeting MOM (no manual
+  paste step). Guardrails, all in `webhook.py` (pure logic, unit-tested):
+  1. **HMAC auth** — the MCP path's auth does not cover this door, so it carries
+     its own. `X-Transcript-Signature: sha256=<HMAC-SHA256(secret, raw body)>`,
+     compared constant-time. The route is **only mounted when
+     `TRANSCRIPT_HOOK_SECRET` is set** — no secret, no unauthenticated way to
+     fire the agent.
+  2. **202 + background** — validate, flip the raw file's frontmatter to
+     `processing`, then return `202 Accepted` immediately and run `claude -p` as
+     an asyncio background task (STT-web's hook call never blocks on the minutes
+     of synthesis).
+  3. **Timeout** — the headless run is killed at `TRANSCRIPT_HOOK_TIMEOUT`
+     (default 1800s / 30m); the vault_exec 15s cap is far too short for this
+     path, so it has its own limit.
+  4. **Exit-code branch** — exit 0 → frontmatter `status: processed`; anything
+     else (incl. timeout) → `status: failed` with the error, so it can be
+     retried.
+  Submitted paths are validated to sit under `TRANSCRIPT_ROOT` and then resolved
+  through the existing vault path guard, so the hook can never point the agent
+  at an arbitrary file. Config: `TRANSCRIPT_HOOK_SECRET`, `CLAUDE_BIN`,
+  `TRANSCRIPT_HOOK_TIMEOUT`, `TRANSCRIPT_ALLOWED_TOOLS`, `TRANSCRIPT_MCP_CONFIG`,
+  `TRANSCRIPT_PROMPT_GUIDE`, `TRANSCRIPT_ROOT` (see `.env.example`).
+- **`vault_exec` tool**: runs an allowlisted shell command on the vault host
+  (cwd = vault root) and returns stdout/stderr/exit code. This is a single-user
+  server gated by the GitHub user allowlist (`GITHUB_ALLOWED_USERS`) + static
+  token, so by the owner's choice the tool is intentionally permissive:
+  1. the command must start with an approved prefix
+     (`find`/`ls`/`rm`/`mv`/`cp`/`mkdir`/`cat`/`echo`/`bash ~/.claude/`/
+     `python3 ~/.hermes/`/`hermes `);
+  2. `rm` is confined to the vault root (each path argument is resolved and must
+     live under `VAULT_PATH`);
+  3. 15s timeout; runs with `cwd = VAULT_PATH`.
+
+  Command chaining / substitution / pipes are **not** restricted — the
+  connecting account is trusted (only the owner can authenticate). This means
+  `vault_exec` is effectively arbitrary command execution behind auth. If the
+  server is ever shared or the threat model changes (e.g. concern about
+  MCP prompt-injection steering the tool), re-add the chaining/pipe guards or
+  drop `echo`/`cat`. Disable entirely by removing the tool registration in
+  `server.py`.
+
 ## 0.2.0
 
 Authentication overhaul and production-deployment hardening.

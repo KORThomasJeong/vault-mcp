@@ -32,6 +32,16 @@ class Config:
     wiki_query_bin: str | None
     save_link_bin: str | None
     index_rebuild_cmd: str | None
+    # transcript-done webhook (STT-web → auto MOM). The route is only mounted
+    # when transcript_hook_secret is set — no secret, no unauthenticated way to
+    # fire a headless `claude -p`.
+    transcript_hook_secret: str | None
+    claude_bin: str
+    transcript_hook_timeout: int
+    transcript_allowed_tools: str
+    transcript_mcp_config: str | None
+    transcript_prompt_guide: str
+    transcript_root: str
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "Config":
@@ -109,4 +119,23 @@ class Config:
             wiki_query_bin=opt("WIKI_QUERY_BIN"),
             save_link_bin=opt("SAVE_LINK_BIN"),
             index_rebuild_cmd=opt("INDEX_REBUILD_CMD"),
+            transcript_hook_secret=opt("TRANSCRIPT_HOOK_SECRET"),
+            claude_bin=opt("CLAUDE_BIN") or "claude",
+            transcript_hook_timeout=int(
+                env.get("TRANSCRIPT_HOOK_TIMEOUT", "1800").strip() or "1800"
+            ),
+            transcript_allowed_tools=(
+                opt("TRANSCRIPT_ALLOWED_TOOLS")
+                or "mcp__thomas__vault_read,mcp__thomas__vault_write"
+            ),
+            transcript_mcp_config=opt("TRANSCRIPT_MCP_CONFIG"),
+            transcript_prompt_guide=(
+                opt("TRANSCRIPT_PROMPT_GUIDE")
+                or "10-Projects/SK에코플랜트 AI Transformation/Operating-Model/"
+                "화자분리 전사본 기반 회의록 정리 프롬프트.md"
+            ),
+            transcript_root=(
+                opt("TRANSCRIPT_ROOT")
+                or "10-Projects/SK에코플랜트 AI Transformation/Transcripts"
+            ),
         )

@@ -126,7 +126,15 @@ class Config:
             ),
             transcript_allowed_tools=(
                 opt("TRANSCRIPT_ALLOWED_TOOLS")
-                or "mcp__thomas__vault_read,mcp__thomas__vault_write"
+                # The vault MCP is registered with Claude as the claude.ai
+                # connector "Thomas", so its tools are namespaced
+                # `mcp__claude_ai_Thomas__*` — NOT `mcp__thomas__*`. A mismatch
+                # here silently denies vault_write and the headless run exits 0
+                # having written nothing.
+                or "mcp__claude_ai_Thomas__vault_read,"
+                "mcp__claude_ai_Thomas__vault_write,"
+                "mcp__claude_ai_Thomas__vault_taxonomy,"
+                "mcp__claude_ai_Thomas__vault_search"
             ),
             transcript_mcp_config=opt("TRANSCRIPT_MCP_CONFIG"),
             transcript_prompt_guide=(

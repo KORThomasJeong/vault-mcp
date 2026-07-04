@@ -19,12 +19,15 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 
 import yaml
+
+log = logging.getLogger("vault_mcp.webhook")
 
 # Background tasks are kept in a module-level set so the event loop does not
 # garbage-collect them mid-flight (asyncio only holds a weak reference).
@@ -302,11 +305,23 @@ async def process_transcript(
     try:
         run = await run_claude(cmd, cwd=cwd, timeout=timeout)
     except Exception as e:  # noqa: BLE001 - a spawn failure must still be recorded
+        log.exception("transcript hook: claude spawn failed for %s", raw_rel)
         _safe_set_status(raw_abs, "failed", {"hook_error": str(e), "hook_at": _utcstamp()})
         return
 
+    # Always log the outcome — an exit-0 run that wrote nothing (e.g. a tool-name
+    # mismatch denying vault_write) is otherwise invisible. Keep a short result
+    # snippet on the raw file too, so a bad run is diagnosable without the log.
+    snippet = (run.stdout or run.stderr).replace("\n", " ")[:600]
+    log.info(
+        "transcript hook: %s exit=%s timed_out=%s result=%s",
+        raw_rel, run.exit_code, run.timed_out, snippet,
+    )
+
     if run.exit_code == 0:
-        _safe_set_status(raw_abs, "processed", {"hook_at": _utcstamp()})
+        _safe_set_status(
+            raw_abs, "processed", {"hook_at": _utcstamp(), "hook_result": snippet}
+        )
     else:
         detail = "timeout" if run.timed_out else (run.stderr or run.stdout)[:500]
         _safe_set_status(

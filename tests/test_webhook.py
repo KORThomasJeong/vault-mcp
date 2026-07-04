@@ -40,35 +40,59 @@ def config(tmp_path, raw_file):
 # --- HMAC verification -----------------------------------------------------
 
 
-def test_verify_signature_accepts_prefixed():
-    body = b'{"path":"x"}'
+def test_verify_signature_elevenlabs_scheme():
+    # Primary: t=<ts>,v0=<hex over "<ts>.<body>"> — what STT-web sends.
+    body = b'{"file_path":"x"}'
+    sig = f"t=1751600000,v0={webhook.elevenlabs_signature(SECRET, body, '1751600000')}"
+    assert webhook.verify_signature(SECRET, body, sig) is True
+
+
+def test_verify_signature_elevenlabs_rejects_wrong_timestamp():
+    # v0 is bound to the timestamp, so a tampered t invalidates it.
+    body = b'{"file_path":"x"}'
+    sig = f"t=9999999999,v0={webhook.elevenlabs_signature(SECRET, body, '1751600000')}"
+    assert webhook.verify_signature(SECRET, body, sig) is False
+
+
+def test_verify_signature_fallback_prefixed():
+    body = b'{"file_path":"x"}'
     sig = "sha256=" + webhook.expected_signature(SECRET, body)
     assert webhook.verify_signature(SECRET, body, sig) is True
 
 
-def test_verify_signature_accepts_bare_hex():
-    body = b'{"path":"x"}'
-    assert webhook.verify_signature(SECRET, body, webhook.expected_signature(SECRET, body))
-
-
 def test_verify_signature_rejects_wrong_and_missing():
-    body = b'{"path":"x"}'
+    body = b'{"file_path":"x"}'
+    assert webhook.verify_signature(SECRET, body, "t=1,v0=deadbeef") is False
     assert webhook.verify_signature(SECRET, body, "sha256=deadbeef") is False
     assert webhook.verify_signature(SECRET, body, None) is False
-    assert webhook.verify_signature(SECRET, b"tampered", webhook.expected_signature(SECRET, body)) is False
 
 
 # --- payload validation ----------------------------------------------------
 
 
-def test_parse_payload_ok():
+def test_parse_payload_ok_file_path():
     body = json.dumps(
-        {"path": f"{ROOT}/2026/m_raw.md", "transcript_id": 42, "meeting_date": "2026-06-16"}
+        {"file_path": f"{ROOT}/2026/m_raw.md", "transcript_id": 35, "meeting_date": "2026-07-04"}
     ).encode()
     p = webhook.parse_payload(body, ROOT)
     assert p.path == f"{ROOT}/2026/m_raw.md"
-    assert p.transcript_id == 42
-    assert p.meeting_date == "2026-06-16"
+    assert p.transcript_id == 35
+    assert p.meeting_date == "2026-07-04"
+
+
+def test_parse_payload_accepts_path_alias():
+    body = json.dumps({"path": f"{ROOT}/2026/m_raw.md"}).encode()
+    assert webhook.parse_payload(body, ROOT).path == f"{ROOT}/2026/m_raw.md"
+
+
+def test_parse_payload_absolute_under_vault_is_rebased(tmp_path):
+    d = tmp_path / ROOT / "2026"
+    d.mkdir(parents=True)
+    (d / "m_raw.md").write_text("x", encoding="utf-8")
+    abs_path = str(d / "m_raw.md")
+    body = json.dumps({"file_path": abs_path}).encode()
+    p = webhook.parse_payload(body, ROOT, vault_root=tmp_path)
+    assert p.path == f"{ROOT}/2026/m_raw.md"
 
 
 def test_parse_payload_rejects_bad_json():
@@ -83,12 +107,12 @@ def test_parse_payload_rejects_missing_path():
 
 def test_parse_payload_rejects_traversal():
     with pytest.raises(webhook.HookError):
-        webhook.parse_payload(json.dumps({"path": f"{ROOT}/../../etc/x.md"}).encode(), ROOT)
+        webhook.parse_payload(json.dumps({"file_path": f"{ROOT}/../../etc/x.md"}).encode(), ROOT)
 
 
 def test_parse_payload_rejects_outside_root():
     with pytest.raises(webhook.HookError):
-        webhook.parse_payload(json.dumps({"path": "01-Inbox/x.md"}).encode(), ROOT)
+        webhook.parse_payload(json.dumps({"file_path": "01-Inbox/x.md"}).encode(), ROOT)
 
 
 # --- frontmatter status transitions ---------------------------------------
@@ -185,10 +209,16 @@ def _call(config, path_rel, sign=True, body_override=None):
     # Starlette's TestClient runs the app lifespan (FastMCP's session manager),
     # which httpx.ASGITransport alone does not — without it the request hangs.
     app = build_server(config).http_app()
-    body = body_override if body_override is not None else json.dumps({"path": path_rel}).encode()
+    body = (
+        body_override if body_override is not None
+        else json.dumps({"file_path": path_rel}).encode()
+    )
     headers = {"content-type": "application/json"}
     if sign:
-        headers["X-Transcript-Signature"] = "sha256=" + webhook.expected_signature(SECRET, body)
+        ts = "1751600000"
+        headers["X-Transcript-Signature"] = (
+            f"t={ts},v0={webhook.elevenlabs_signature(SECRET, body, ts)}"
+        )
     with TestClient(app) as client:
         return client.post("/hooks/transcript-done", content=body, headers=headers)
 

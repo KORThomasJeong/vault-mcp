@@ -284,7 +284,9 @@ def build_server(config: Config) -> FastMCP:
                 return JSONResponse({"error": "invalid signature"}, status_code=401)
 
             try:
-                payload = webhook.parse_payload(body, config.transcript_root)
+                payload = webhook.parse_payload(
+                    body, config.transcript_root, config.vault_path
+                )
             except webhook.HookError as e:
                 return JSONResponse({"error": str(e)}, status_code=400)
 

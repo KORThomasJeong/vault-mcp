@@ -37,24 +37,53 @@ class HookError(ValueError):
 
 # --- HMAC verification ----------------------------------------------------
 #
-# Contract with STT-web: header `X-Transcript-Signature` carries
-#   sha256=<hex hmac-sha256 of the raw request body, keyed by the shared secret>
-# (GitHub's webhook convention). A bare hex digest without the `sha256=`
-# prefix is also accepted so the sender side can stay minimal.
+# Contract with STT-web: header `X-Transcript-Signature` carries the
+# ElevenLabs/Stripe-style signature that STT-web already sends:
+#   t=<unix ts>,v0=<hex HMAC-SHA256(secret, "<t>.<raw body>")>
+# The timestamp is part of the signed payload (binds the signature to a moment),
+# so it must be prepended with a dot before hashing.
+#
+# A plain `sha256=<hex>` / bare-hex signature over just the body is also accepted
+# as a fallback, so a minimal sender still interoperates.
+
+
+def elevenlabs_signature(secret: str, body: bytes, timestamp: str) -> str:
+    """The v0 hex digest for this (timestamp, body), per the ElevenLabs scheme."""
+    signed = timestamp.encode("utf-8") + b"." + body
+    return hmac.new(secret.encode("utf-8"), signed, sha256).hexdigest()
 
 
 def expected_signature(secret: str, body: bytes) -> str:
-    """The signature we expect for this body, without the `sha256=` prefix."""
+    """Fallback: hex HMAC over the raw body alone (no timestamp)."""
     return hmac.new(secret.encode("utf-8"), body, sha256).hexdigest()
 
 
+def _parse_sig_header(header: str) -> dict[str, str]:
+    """Parse `k=v,k=v` signature headers (e.g. `t=123,v0=abc`) into a dict."""
+    fields: dict[str, str] = {}
+    for item in header.split(","):
+        key, sep, val = item.strip().partition("=")
+        if sep:
+            fields[key.strip()] = val.strip()
+    return fields
+
+
 def verify_signature(secret: str, body: bytes, signature: str | None) -> bool:
-    """Constant-time compare of the presented signature against the expected one."""
+    """Constant-time verify of the presented signature.
+
+    Primary scheme (what STT-web sends): `t=<ts>,v0=<hex>` where the hex is
+    HMAC-SHA256(secret, "<ts>.<body>"). Fallback: `sha256=<hex>` or bare hex over
+    the body alone.
+    """
     if not signature:
         return False
-    presented = signature.strip()
-    if presented.startswith("sha256="):
-        presented = presented[len("sha256=") :]
+    sig = signature.strip()
+    fields = _parse_sig_header(sig)
+    if "t" in fields and "v0" in fields:
+        return hmac.compare_digest(
+            fields["v0"], elevenlabs_signature(secret, body, fields["t"])
+        )
+    presented = sig[len("sha256=") :] if sig.startswith("sha256=") else sig
     return hmac.compare_digest(presented, expected_signature(secret, body))
 
 
@@ -194,10 +223,17 @@ class HookPayload:
     meeting_date: object
 
 
-def parse_payload(body: bytes, transcript_root: str) -> HookPayload:
+def parse_payload(
+    body: bytes, transcript_root: str, vault_root: Path | None = None
+) -> HookPayload:
     """Validate the JSON body. Raises HookError on anything malformed or on a
     path that escapes the transcript root — the webhook must never be able to
-    point the agent at an arbitrary file."""
+    point the agent at an arbitrary file.
+
+    STT-web sends the raw path as `file_path`; `path` is accepted as an alias.
+    An absolute path is tolerated when it resolves inside `vault_root` (the
+    sender may know only its absolute mount) — it is rebased to vault-relative.
+    """
     try:
         data = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -205,17 +241,27 @@ def parse_payload(body: bytes, transcript_root: str) -> HookPayload:
     if not isinstance(data, dict):
         raise HookError("Body must be a JSON object")
 
-    path = data.get("path")
-    if not isinstance(path, str) or not path.strip():
-        raise HookError("Missing 'path'")
-    path = path.strip()
+    raw = data.get("file_path") or data.get("path")
+    if not isinstance(raw, str) or not raw.strip():
+        raise HookError("Missing 'file_path'")
+    raw = raw.strip()
 
-    pure = PurePosixPath(path)
-    if pure.is_absolute() or any(p == ".." for p in pure.parts):
-        raise HookError(f"Path escapes the vault: {path!r}")
+    pure = PurePosixPath(raw)
+    if pure.is_absolute():
+        # Accept only if it lives under the vault, then rebase to relative.
+        if vault_root is None:
+            raise HookError(f"Absolute path not allowed: {raw!r}")
+        try:
+            rel = Path(raw).resolve().relative_to(vault_root.resolve())
+        except (ValueError, OSError) as e:
+            raise HookError(f"Absolute path is outside the vault: {raw!r}") from e
+        pure = PurePosixPath(rel.as_posix())
+    if any(p == ".." for p in pure.parts):
+        raise HookError(f"Path escapes the vault: {raw!r}")
+
     root = transcript_root.rstrip("/")
     if not (str(pure) == root or str(pure).startswith(root + "/")):
-        raise HookError(f"Path is not under the transcript root ({root}): {path!r}")
+        raise HookError(f"Path is not under the transcript root ({root}): {raw!r}")
 
     return HookPayload(
         path=str(pure),

@@ -4,9 +4,17 @@ choose the right destination folder itself — no classifier needed on the serve
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
+
+# Top-level folders that are never classification targets even if present.
+# 90-Archive is excluded on purpose: it is a terminal store (종료·폐기), not a
+# destination for new notes.
+_ROOT_EXCLUDE = {"attachments", "Wiki", "90-Archive"}
+# PARA buckets follow an ``NN-`` numeric prefix (00-, 01-, 10-, 40-, 90- ...).
+_PARA_ROOT = re.compile(r"^\d{2}-")
 
 # Short, stable summary of the PARA policy the vault follows. Kept compact on
 # purpose: it is guidance for the model, not a spec dump.
@@ -16,7 +24,14 @@ PARA buckets (pick the most specific fit):
 - 10-Projects/     active work with an end date (e.g. Development/, Github-*/)
 - 20-Areas/        ongoing responsibilities (People/, Daily-Brain/, Journal/)
 - 30-Resources/    reference material, organised by domain (AI/, Development/, Business/, Growth/, General/...)
+- 40-프롬프트/      reusable prompts / prompt engineering assets
+- 00-System/, 02-Todo/, 03-Staging/  system, dashboards, HIL staging (rarely a save target)
 - docs/            project/engineering docs
+
+The full folder list below is scanned live from disk: every top-level NN-* bucket
+is discovered automatically, so new buckets appear without a code change. Prefer a
+folder from that list. (90-Archive/, attachments/, Wiki/ are intentionally excluded
+as destinations.)
 
 Rules:
 - Never write a .md file to the vault root.
@@ -45,9 +60,25 @@ def _load_whitelist(vault_root: Path, rel: str) -> dict | None:
     return {"categories": simplified, "fallback": data.get("fallback")}
 
 
+def _discover_roots(vault_root: Path) -> list[str]:
+    """Discover PARA bucket folders from disk: any top-level ``NN-*`` dir plus
+    ``docs``. Beats a hardcoded list — new buckets (e.g. 40-프롬프트, 50-*) are
+    picked up automatically."""
+    roots: list[str] = []
+    for child in sorted(vault_root.iterdir()):
+        if not child.is_dir():
+            continue
+        name = child.name
+        if name.startswith(".") or name in _ROOT_EXCLUDE:
+            continue
+        if _PARA_ROOT.match(name) or name == "docs":
+            roots.append(name)
+    return roots
+
+
 def _folder_tree(vault_root: Path, max_depth: int = 2) -> list[str]:
     """List visible folders (depth-limited) under the PARA buckets, relative."""
-    roots = ["01-Inbox", "10-Projects", "20-Areas", "30-Resources", "docs"]
+    roots = _discover_roots(vault_root)
     out: list[str] = []
     for root in roots:
         base = vault_root / root

@@ -68,15 +68,19 @@ All config is via environment (see `.env.example`):
 | `MCP_HOST` |  | `127.0.0.1` | Use `0.0.0.0` when the proxy reaches it over the LAN (e.g. NPM in Docker), else 502. |
 | `MCP_PORT` |  | `8848` | |
 | `MCP_PATH` |  | `/mcp` | |
+| `JIKJI_BIN` |  | (none) | Optional `jikji` executable. When set, `vault_search` semantic mode prefers `jikji find <VAULT_PATH> ... --json` for bounded local file discovery. |
+| `JIKJI_AUTO_PREPARE` |  | `false` | If `true`, add `--auto-prepare` when calling `jikji find`. Default is non-surprising: search existing Jikji indexes only. |
 | `FAST_SEARCH_BIN` |  | (none) | Warm semantic-search front-end, called `<bin> "<query>" -n <limit>`. Preferred over `QMD_BIN`. |
 | `QMD_BIN` |  | `qmd` | Fallback semantic search helper. Blank + no `FAST_SEARCH_BIN` → that mode is disabled. |
 | `WIKI_QUERY_BIN` |  | `wiki-query` | Title/path search helper. Blank → disabled. |
 | `SAVE_LINK_BIN` |  | `obsidian-save-link` | URL→note helper. Blank → disabled. |
 | `INDEX_REBUILD_CMD` |  | (none) | Command run when a tool is called with `rebuild_index=true`. |
 
-The search and URL-save tools shell out to optional companion CLIs. If you don't
-have them, those tools simply report that they're disabled — read/write/taxonomy
-still work.
+The search and URL-save tools shell out to optional companion CLIs. If you set
+`JIKJI_BIN`, semantic search prefers Jikji's prebuilt local-discovery index for
+the vault root and falls back to the older `FAST_SEARCH_BIN` / `QMD_BIN` path if
+the Jikji index is not ready. If you don't install any helpers, those tools
+simply report that they're disabled — read/write/taxonomy still work.
 
 ## Run
 

@@ -189,7 +189,15 @@ def build_server(config: Config) -> FastMCP:
         if mode == "title":
             return external.title_search(config.wiki_query_bin, query, limit)
         return external.semantic_search(
-            config.fast_search_bin, config.qmd_bin, query, "obsidian", limit, include_wiki
+            config.jikji_bin,
+            config.vault_path,
+            config.fast_search_bin,
+            config.qmd_bin,
+            query,
+            "obsidian",
+            limit,
+            include_wiki,
+            config.jikji_auto_prepare,
         )
 
     @mcp.tool

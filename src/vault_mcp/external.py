@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
+from pathlib import Path
 
 DEFAULT_TIMEOUT = 120
 
@@ -25,13 +26,23 @@ def run(argv: list[str], timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str, str]
 
 
 def semantic_search(
+    jikji_bin: str | None,
+    vault_root: Path,
     fast_search_bin: str | None,
     qmd_bin: str | None,
     query: str,
     collection: str,
     limit: int,
     include_wiki: bool = False,
+    jikji_auto_prepare: bool = False,
 ) -> str:
+    jikji_error: str | None = None
+    if jikji_bin:
+        jikji_result, jikji_error = _run_jikji_find(
+            jikji_bin, vault_root, query, limit, jikji_auto_prepare
+        )
+        if jikji_result is not None:
+            return jikji_result
     # Prefer a warm fast-search front-end (e.g. a qa-search daemon) if configured;
     # it answers in milliseconds without loading a model per call.
     if fast_search_bin:
@@ -50,7 +61,85 @@ def semantic_search(
         if code != 0:
             return f"Search failed ({code}): {err.strip() or out.strip()}"
         return out.strip() or "(no results)"
-    return "Semantic search is disabled (neither FAST_SEARCH_BIN nor QMD_BIN configured)."
+    if jikji_error:
+        return jikji_error
+    return (
+        "Semantic search is disabled (none of JIKJI_BIN, FAST_SEARCH_BIN, or QMD_BIN "
+        "configured)."
+    )
+
+
+def _run_jikji_find(
+    jikji_bin: str,
+    vault_root: Path,
+    query: str,
+    limit: int,
+    auto_prepare: bool,
+) -> tuple[str | None, str | None]:
+    argv = [
+        jikji_bin,
+        "find",
+        str(vault_root),
+        query,
+        "--json",
+        "--top-k",
+        str(limit),
+    ]
+    if auto_prepare:
+        argv.append("--auto-prepare")
+    code, out, err = run(argv, timeout=300 if auto_prepare else DEFAULT_TIMEOUT)
+    out_s, err_s = out.strip(), err.strip()
+    if code == 0:
+        try:
+            payload = json.loads(out_s)
+        except json.JSONDecodeError:
+            return out_s or "(no results)", None
+        return _format_jikji_find(payload), None
+
+    detail = err_s or out_s or "unknown error"
+    missing_index = "No Jikji search index found under" in detail
+    if missing_index and not auto_prepare:
+        return None, f"Jikji index missing for {vault_root}. Run: jikji prepare {vault_root}"
+    return None, f"Jikji search failed ({code}): {detail}"
+
+
+def _format_jikji_find(payload: dict) -> str:
+    lines: list[str] = ["Search backend: Jikji find"]
+
+    index_status = payload.get("index_status")
+    if index_status:
+        lines.append(f"Index: {index_status}")
+
+    handoff_action = payload.get("handoff_action")
+    if handoff_action:
+        lines.append(f"Handoff: {handoff_action}")
+
+    answer_paths = payload.get("answer_paths") or payload.get("paths") or []
+    if answer_paths:
+        lines.append("Answer paths:")
+        lines.extend(f"{idx}. {path}" for idx, path in enumerate(answer_paths, start=1))
+
+    candidates = payload.get("candidates") or []
+    if candidates:
+        lines.append("Candidates:")
+        for idx, candidate in enumerate(candidates, start=1):
+            path = candidate.get("path") or "(unknown path)"
+            extras: list[str] = []
+            score = candidate.get("score")
+            if score is not None:
+                extras.append(f"score={score}")
+            route = candidate.get("route") or candidate.get("route_label")
+            if route:
+                extras.append(str(route))
+            next_read = candidate.get("next_read")
+            if next_read:
+                extras.append(f"next_read={next_read}")
+            suffix = f" ({', '.join(extras)})" if extras else ""
+            lines.append(f"{idx}. {path}{suffix}")
+
+    if len(lines) == 1:
+        return "(no results)"
+    return "\n".join(lines)
 
 
 def title_search(wiki_query_bin: str | None, text: str, limit: int) -> str:

@@ -10,6 +10,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
+
+
+def _env_flag(env: Mapping[str, str], name: str, default: bool = False) -> bool:
+    raw = env.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -27,6 +35,8 @@ class Config:
     port: int
     path: str
     # helper binaries
+    jikji_bin: str | None
+    jikji_auto_prepare: bool
     fast_search_bin: str | None
     qmd_bin: str | None
     wiki_query_bin: str | None
@@ -114,6 +124,8 @@ class Config:
             host=env.get("MCP_HOST", "127.0.0.1").strip() or "127.0.0.1",
             port=int(env.get("MCP_PORT", "8848").strip() or "8848"),
             path=env.get("MCP_PATH", "/mcp").strip() or "/mcp",
+            jikji_bin=opt("JIKJI_BIN"),
+            jikji_auto_prepare=_env_flag(env, "JIKJI_AUTO_PREPARE", default=False),
             fast_search_bin=opt("FAST_SEARCH_BIN"),
             qmd_bin=opt("QMD_BIN"),
             wiki_query_bin=opt("WIKI_QUERY_BIN"),
